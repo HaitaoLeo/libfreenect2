@@ -10,10 +10,10 @@ LIBUSB_INSTALL_DIR=$DEPENDS_DIR/libusb
 
 rm -rf $LIBUSB_SOURCE_DIR $LIBUSB_INSTALL_DIR
 
-git clone https://github.com/libusb/libusb.git $LIBUSB_SOURCE_DIR
+git clone https://github.com/xlz/libusb.git $LIBUSB_SOURCE_DIR
 
 cd $LIBUSB_SOURCE_DIR
-git checkout v1.0.20
+git checkout origin/zerocopy
 ./bootstrap.sh
 ./configure --prefix=$LIBUSB_INSTALL_DIR
 make && make install

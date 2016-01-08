@@ -71,7 +71,9 @@ void TransferPool::deallocate()
 
   if(buffer_ != 0)
   {
-    delete[] buffer_;
+    LOG_INFO << "libusb_dev_mem_free " << buffer_size_;
+    libusb_dev_mem_free(device_handle_, buffer_, buffer_size_);
+    //delete[] buffer_;
     buffer_ = 0;
     buffer_size_ = 0;
   }
@@ -144,7 +146,14 @@ void TransferPool::setCallback(DataCallback *callback)
 void TransferPool::allocateTransfers(size_t num_transfers, size_t transfer_size)
 {
   buffer_size_ = num_transfers * transfer_size;
-  buffer_ = new unsigned char[buffer_size_];
+  //buffer_ = new unsigned char[buffer_size_];
+  LOG_INFO << "libusb_dev_mem_alloc " << buffer_size_;
+  buffer_ = libusb_dev_mem_alloc(device_handle_, buffer_size_);
+  if (buffer_ == NULL)
+  {
+    LOG_ERROR << "libusb_dev_mem_alloc returns NULL";
+    return;
+  }
   transfers_.reserve(num_transfers);
 
   unsigned char *ptr = buffer_;

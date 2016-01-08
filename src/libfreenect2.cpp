@@ -51,7 +51,7 @@
   #define NUM_XFERS 4
 #else
   #define PKTS_PER_XFER 8
-  #define NUM_XFERS 60
+  #define NUM_XFERS 8
 #endif
 
 namespace libfreenect2
