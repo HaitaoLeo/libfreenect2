@@ -27,8 +27,11 @@
 /** @file Protonect.cpp Main application file. */
 
 #include <iostream>
+#include <cstdio>
 #include <cstdlib>
 #include <signal.h>
+#include <time.h>
+#include <sys/time.h>
 
 /// [headers]
 #include <libfreenect2/libfreenect2.hpp>
@@ -154,8 +157,17 @@ int main(int argc, char *argv[])
   bool viewer_enabled = true;
   bool enable_rgb = true;
   bool enable_depth = true;
+  bool save_raws = false;
   int deviceId = -1;
   size_t framemax = -1;
+  int frameskip = 0;
+  char datestring[64] = "\0";
+  struct timeval start_tv;
+  gettimeofday(&start_tv, NULL);
+  struct tm *tm;
+  tm = localtime(&start_tv.tv_sec);
+  strftime(datestring, sizeof(datestring), "%Y%m%d%H%M%S", tm);
+  std::string save_prefix = "kinectv2-";
 
   for(int argI = 1; argI < argc; ++argI)
   {
@@ -227,6 +239,14 @@ int main(int argc, char *argv[])
       std::cout << "CUDA pipeline is not supported!" << std::endl;
 #endif
     }
+    else if(arg == "dumpjpeg")
+    {
+      enable_depth = false;
+      viewer_enabled = false;
+      if(!pipeline)
+        pipeline = new libfreenect2::DumpPacketPipeline();
+      save_raws = true;
+    }
     else if(arg.find_first_not_of("0123456789") == std::string::npos) //check if parameter could be a serial number
     {
       serial = arg;
@@ -249,6 +269,16 @@ int main(int argc, char *argv[])
       framemax = strtol(argv[argI], NULL, 0);
       if (framemax == 0) {
         std::cerr << "invalid frame count '" << argv[argI] << "'" << std::endl;
+        return -1;
+      }
+    }
+    else if(arg == "-skip")
+    {
+      ++argI;
+      frameskip = strtol(argv[argI], NULL, 0);
+      if (frameskip < 0)
+      {
+        std::cerr << "invalid frame skip '" << argv[argI] << "'" << std::endl;
         return -1;
       }
     }
@@ -345,6 +375,18 @@ int main(int argc, char *argv[])
   viewer_enabled = false;
 #endif
 
+  std::string prefix = save_prefix + datestring;
+  char meta_filename[256];
+  sprintf(meta_filename, "%s.txt", prefix.c_str());
+  FILE *meta_f = fopen(meta_filename, "a");
+  libfreenect2::Freenect2Device::ColorCameraParams params = dev->getColorCameraParams();
+  if (meta_f)
+  {
+    fprintf(meta_f, "#fx=%.9g fy=%.9g cx=%.9g cy=%.9g\n", params.fx, params.fy, params.cx, params.cy);
+    fprintf(meta_f, "#filename unix-timestamp hardware-timestamp sequence-number exposure gain gamma status\n");
+    fclose(meta_f);
+  }
+
 /// [loop start]
   while(!protonect_shutdown && (framemax == (size_t)-1 || framecount < framemax))
   {
@@ -353,6 +395,8 @@ int main(int argc, char *argv[])
       std::cout << "timeout!" << std::endl;
       return -1;
     }
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
     libfreenect2::Frame *rgb = frames[libfreenect2::Frame::Color];
     libfreenect2::Frame *ir = frames[libfreenect2::Frame::Ir];
     libfreenect2::Frame *depth = frames[libfreenect2::Frame::Depth];
@@ -366,6 +410,32 @@ int main(int argc, char *argv[])
     }
 
     framecount++;
+    if (save_raws && (frameskip == 0 || framecount % frameskip == 0))
+    {
+      if (enable_rgb)
+      {
+        char rgb_filename[256];
+        sprintf(rgb_filename, "%s-%06zu.jpg", prefix.c_str(), framecount);
+        FILE *rgb_f = fopen(rgb_filename, "wb");
+        FILE *meta_f = fopen(meta_filename, "a");
+        if (rgb_f)
+        {
+          fwrite(rgb->data, rgb->width * rgb->height * rgb->bytes_per_pixel, 1, rgb_f);
+          fclose(rgb_f);
+        }
+        if (meta_f)
+        {
+          fprintf(meta_f, "%s %ld.%06ld %u %u %.9g %.9g %.9g %u\n", rgb_filename,
+                  tv.tv_sec, tv.tv_usec, rgb->timestamp, rgb->sequence,
+                  rgb->exposure, rgb->gain, rgb->gamma, rgb->status);
+          fclose(meta_f);
+        }
+        std::cerr << rgb_filename << std::endl;
+      }
+      listener.release(frames);
+      continue;
+    }
+
     if (!viewer_enabled)
     {
       if (framecount % 100 == 0)
@@ -377,6 +447,17 @@ int main(int argc, char *argv[])
 #ifdef EXAMPLES_WITH_OPENGL_SUPPORT
     if (enable_rgb)
     {
+      uint32_t *bgrx = reinterpret_cast<uint32_t*>(rgb->data);
+      for (int i = 0; i < 1080; i++)
+      {
+        bgrx[i*1920 + 1920/2 - 1] = 0x0000ff00;
+        bgrx[i*1920 + 1920/2] = 0x0000ff00;
+      }
+      for (int i = 0; i < 1920; i++)
+      {
+        bgrx[1920*(1080/2-1) + i] = 0x0000ff00;
+        bgrx[1920*1080/2 + i] = 0x0000ff00;
+      }
       viewer.addFrame("RGB", rgb);
     }
     if (enable_depth)
